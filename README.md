@@ -1,8 +1,6 @@
 # Desloppify
 
-Multi-language codebase health scanner and technical debt tracker. Scans for cruft (dead code, duplication, complexity, code smells), tracks findings across scans, auto-fixes mechanical issues, and reports a weighted health score.
-
-Supports TypeScript/React and Python. Adding a language = adding one directory.
+Codebase health scanner. Detects cruft (dead code, duplication, complexity, smells), tracks findings across scans, auto-fixes mechanical issues, reports a weighted score. TypeScript/React and Python.
 
 ## Install
 
@@ -12,28 +10,15 @@ pip install git+https://github.com/peteromallet/desloppify.git
 
 ## Use with Any AI Agent
 
-Copy-paste this into any AI coding agent (Cursor, Windsurf, Copilot, Claude Code, etc.):
+Paste this into any AI coding agent (Cursor, Windsurf, Copilot, Claude Code, etc.):
 
 > Install desloppify: `pip install git+https://github.com/peteromallet/desloppify.git`
 >
-> Run `desloppify scan --path src/` to scan for code quality issues. It detects dead code, unused exports, duplication, complexity, code smells, and more (20+ detectors) and assigns a weighted health score.
->
-> Then use this workflow:
-> - `desloppify status` — see your score and tier breakdown
-> - `desloppify next` — get the highest-priority finding to fix
-> - Fix it, then `desloppify resolve fixed "<id>"` to mark it done
-> - `desloppify fix unused-imports --dry-run` — preview auto-fixes for mechanical issues
-> - `desloppify scan --path src/` — rescan after a batch of fixes
->
-> Work tier by tier: T1 (auto-fixable) → T2 (quick manual) → T3 (needs judgment) → T4 (major refactor). Use `desloppify show <detector>` to dig into any category, `desloppify plan` for a prioritized markdown plan, and `desloppify tree` for an annotated codebase overview.
->
-> For Python projects, use `--lang python`. Language is auto-detected from project files if omitted.
+> Scan my codebase: `desloppify scan --path src/`. Then: `desloppify status` for the score, `desloppify next` for the top finding to fix. After fixing: `desloppify resolve fixed "<id>"`. For auto-fixable stuff: `desloppify fix unused-imports --dry-run`. Rescan after each batch. Work tier by tier: T1 (auto-fix) → T2 (quick) → T3 (judgment) → T4 (refactor). `desloppify show <detector>` to dig in, `desloppify plan` for a prioritized plan. Use `--lang python` for Python projects.
 
-## Claude Code Integration
+## Claude Code
 
-### Option A: Skill (recommended)
-
-One command — Claude auto-discovers it and knows when to use it:
+**Skill** (recommended) — one command, Claude auto-discovers it:
 
 ```bash
 mkdir -p .claude/skills/desloppify && curl -sL \
@@ -41,19 +26,7 @@ mkdir -p .claude/skills/desloppify && curl -sL \
   -o .claude/skills/desloppify/SKILL.md
 ```
 
-That's it. Next time you start Claude Code, ask: "scan my codebase for code quality issues" — Claude knows what to do. The skill auto-triggers when you ask about code quality, technical debt, code smells, etc.
-
-**How it works**: Claude reads the skill description on startup. When your conversation matches, it loads the full instructions and runs `desloppify` commands via Bash. Results are written to `.desloppify/query.json` for structured access.
-
-### Option B: MCP Server
-
-Structured tool interface — Claude calls desloppify tools directly with typed parameters and gets structured JSON responses:
-
-```bash
-pip install "mcp[cli]"  # additional dependency
-```
-
-Add to your `.mcp.json` (project root):
+**MCP Server** — structured tool interface (`pip install "mcp[cli]"` first). Add to `.mcp.json` at project root:
 
 ```json
 {
@@ -66,50 +39,31 @@ Add to your `.mcp.json` (project root):
 }
 ```
 
-Restart Claude Code. It discovers tools: `scan`, `status`, `show`, `detect`, `next_finding`, `resolve`.
-
-### Option C: Both
-
-The skill provides workflow guidance (when to scan, what to look at, how to fix).
-The MCP server provides structured data access. They complement each other.
+Both work together: skill provides workflow guidance, MCP provides structured data.
 
 ## Quick Start
 
 ```bash
 desloppify scan --path src/              # detect findings, update state
 desloppify status                         # health score + tier breakdown
-desloppify show structural                # dig into structural findings
 desloppify next --count 5                 # next 5 highest-priority items
 desloppify fix unused-imports --dry-run   # preview auto-fix
-desloppify scan --path src/              # rescan to update state
+desloppify resolve fixed "unused::..."    # mark finding resolved
+desloppify scan --path src/              # rescan after fixes
 ```
-
-## Workflow
-
-```
-scan → status → fix T1 → fix T2 → review T3/T4 → rescan
-```
-
-1. **Scan**: `desloppify scan --path src/` — run detectors, merge into state
-2. **Review**: `desloppify status` — score, tier breakdown, suggested next action
-3. **Fix T1** (auto-fixable): `desloppify fix <fixer> --dry-run` then apply
-4. **Fix T2** (quick): `desloppify next --tier 2` → fix → `desloppify resolve fixed "id"`
-5. **Review T3/T4**: `desloppify show gods` or `desloppify show src/components/` → fix or wontfix
-6. **Rescan** after every batch of fixes
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `scan` | Run all detectors, update state, show diff |
-| `status` | Score dashboard with per-tier progress |
-| `show <pattern>` | Dig into findings by file, directory, detector, or ID |
-| `next [--tier N]` | Next highest-priority open finding |
-| `resolve <status> <patterns>` | Mark as fixed / wontfix / false_positive |
-| `ignore <pattern>` | Suppress findings matching a pattern |
+| `scan` | Run all detectors, update state |
+| `status` | Score + per-tier progress |
+| `show <pattern>` | Findings by file, directory, detector, or ID |
+| `next [--tier N]` | Highest-priority open finding |
+| `resolve <status> <patterns>` | Mark fixed / wontfix / false_positive |
 | `fix <fixer> [--dry-run]` | Auto-fix mechanical issues |
-| `plan` | Generate prioritized markdown plan |
-| `detect <name>` | Run a single detector raw (bypass state) |
+| `detect <name>` | Run a single detector raw |
+| `plan` | Prioritized markdown plan |
 | `tree` | Annotated codebase tree |
 | `viz` | Interactive HTML treemap |
 
@@ -119,57 +73,35 @@ scan → status → fix T1 → fix T2 → review T3/T4 → rescan
 
 **Python**: unused, large, complexity, gods, passthrough, smells, dupes, deps, cycles, orphaned, single-use, naming
 
-## Tier System
+## Tiers & Scoring
 
-| Tier | Description | Examples |
-|------|-------------|----------|
-| T1 | Auto-fixable | Unused imports, tagged debug logs |
-| T2 | Quick manual fix | Unused vars, dead exports, high-severity smells |
-| T3 | Needs judgment | Code smells, near-dupes, single-use abstractions |
+| Tier | Fix type | Examples |
+|------|----------|----------|
+| T1 | Auto-fixable | Unused imports, debug logs |
+| T2 | Quick manual | Unused vars, dead exports |
+| T3 | Needs judgment | Near-dupes, single-use abstractions |
 | T4 | Major refactor | God components, mixed concerns |
 
-## Scoring
-
-- **Weighted**: T4 findings count 4x more than T1
-- **Score**: all non-open findings count as resolved
-- **Strict score**: excludes wontfix from both numerator and denominator
-- Score can temporarily drop after fixing (cascade effects)
+Score is weighted (T4 = 4x T1). Strict score excludes wontfix.
 
 ## Configuration
 
-Environment variables:
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DESLOPPIFY_ROOT` | Current directory | Project root for path resolution |
-| `DESLOPPIFY_SRC` | `src` | Source directory (for TS import resolution) |
-
-## Multi-Language
-
-`--lang <name>` selects language (auto-detected if omitted). Each language has its own state file, detectors, and fixers. Scans are scoped — languages never cross-contaminate state.
+| `DESLOPPIFY_ROOT` | cwd | Project root |
+| `DESLOPPIFY_SRC` | `src` | Source directory (TS alias resolution) |
+| `--lang <name>` | auto-detected | Language selection (each has own state) |
 
 ## Adding a Language
 
-Create `desloppify/lang/<name>/`:
-
-```
-lang/<name>/
-├── __init__.py      # LangConfig subclass + phase runners + config data
-├── commands.py      # detect-subcommand wrappers + command registry
-├── extractors.py    # extract_functions/classes → FunctionInfo/ClassInfo
-├── deps.py          # Import graph builder
-├── unused.py        # Wrap language tool (ruff, gopls, etc.)
-└── smells.py        # Language-specific smell rules (optional)
-```
-
-Zero changes to shared code required. See `desloppify/lang/python/` for a complete example.
+Create `desloppify/lang/<name>/` with `__init__.py`, `commands.py`, `extractors.py`, `detectors/`, `fixers/`. Validated at registration. Zero shared code changes. See `lang/python/` for example.
 
 ## Architecture
 
 ```
-detectors/              ← Layer 1: Generic algorithms (zero language knowledge)
-lang/base.py            ← Layer 2: Shared helpers (make_*_findings, structural signals)
-lang/<name>/__init__.py ← Layer 3: Language orchestration (config + phase runners)
+detectors/              ← Generic algorithms (zero language knowledge)
+lang/base.py            ← Shared finding helpers
+lang/<name>/            ← Language config + phase runners + extractors + detectors + fixers
 ```
 
 Import direction: `lang/` → `detectors/`. Never the reverse.
