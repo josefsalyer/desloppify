@@ -180,11 +180,14 @@ def _find_suspect_detectors(
 def _auto_resolve_disappeared(
     existing: dict, current_ids: set[str], suspect_detectors: set[str],
     now: str, *, lang: str | None, scan_path: str | None,
+    exclude: tuple[str, ...] = (),
 ) -> tuple[int, int, int]:
     """Auto-resolve findings that disappeared from the scan.
 
     Wontfix findings that disappear are upgraded to auto_resolved so the strict
-    score reflects the actual fix. Returns (auto_resolved, skipped_lang, skipped_path).
+    score reflects the actual fix. Findings from excluded directories are skipped
+    (they disappeared because they were excluded, not fixed).
+    Returns (auto_resolved, skipped_lang, skipped_path).
     """
     auto_resolved = 0
     skipped_lang = 0
@@ -196,6 +199,10 @@ def _auto_resolve_disappeared(
                 continue
             if scan_path and not old["file"].startswith(scan_path.rstrip("/") + "/") and old["file"] != scan_path:
                 skipped_path += 1
+                continue
+            # Don't auto-resolve findings from excluded directories —
+            # they disappeared because they were excluded, not fixed
+            if exclude and any(ex in old["file"] for ex in exclude):
                 continue
             if old.get("detector", "unknown") in suspect_detectors:
                 continue
@@ -212,7 +219,8 @@ def _auto_resolve_disappeared(
 
 def merge_scan(state: dict, current_findings: list[dict], *,
                lang: str | None = None, scan_path: str | None = None,
-               force_resolve: bool = False) -> dict:
+               force_resolve: bool = False,
+               exclude: tuple[str, ...] = ()) -> dict:
     """Merge a fresh scan into existing state. Returns diff summary.
 
     Args:
@@ -220,6 +228,8 @@ def merge_scan(state: dict, current_findings: list[dict], *,
         scan_path: Relative scan path — only auto-resolve findings under this path.
         force_resolve: Bypass suspect-detector protection (use when you know a
             detector legitimately went to 0).
+        exclude: Directory exclusion patterns — findings from excluded dirs are
+            not auto-resolved (they disappeared because of the filter, not a fix).
 
     Protections against detector instability:
     - If a detector previously had findings but now returns zero, its open
@@ -246,6 +256,10 @@ def merge_scan(state: dict, current_findings: list[dict], *,
         det = f.get("detector", "unknown")
         current_by_detector[det] = current_by_detector.get(det, 0) + 1
 
+        # Stamp language on findings so language-scoped auto-resolve works
+        if lang:
+            f["lang"] = lang
+
         if fid in existing:
             old = existing[fid]
             old["last_seen"] = now
@@ -254,6 +268,9 @@ def merge_scan(state: dict, current_findings: list[dict], *,
             old["confidence"] = f["confidence"]
             old["summary"] = f["summary"]
             old["detail"] = f.get("detail", {})
+            # Backfill lang on existing findings
+            if lang and not old.get("lang"):
+                old["lang"] = lang
 
             # Reopen if it was auto-resolved/fixed but reappeared
             if old["status"] in ("fixed", "auto_resolved"):
@@ -273,7 +290,7 @@ def merge_scan(state: dict, current_findings: list[dict], *,
 
     auto_resolved, skipped_lang, skipped_path = _auto_resolve_disappeared(
         existing, current_ids, suspect_detectors, now,
-        lang=lang, scan_path=scan_path)
+        lang=lang, scan_path=scan_path, exclude=exclude)
 
     _recompute_stats(state)
 

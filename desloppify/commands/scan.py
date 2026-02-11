@@ -31,11 +31,12 @@ def cmd_scan(args):
 
     prev_score = state.get("score", 0)
     prev_strict = state.get("strict_score", 0)
-    from ..utils import rel
+    from ..utils import rel, _extra_exclusions
     diff = merge_scan(state, findings,
                       lang=lang.name if lang else None,
                       scan_path=rel(str(path)),
-                      force_resolve=getattr(args, "force_resolve", False))
+                      force_resolve=getattr(args, "force_resolve", False),
+                      exclude=_extra_exclusions)
     save_state(state, sp)
 
     new_score = state["score"]
