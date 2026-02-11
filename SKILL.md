@@ -13,7 +13,7 @@ allowed-tools: Bash(desloppify *)
 
 ## Prerequisite
 
-!`command -v desloppify >/dev/null 2>&1 && echo "desloppify: installed" || echo "NOT INSTALLED — run: pip install git+https://github.com/peteromallet/desloppify.git"`
+!`command -v desloppify >/dev/null 2>&1 && echo "desloppify: installed" || echo "NOT INSTALLED — run: pip install --upgrade git+https://github.com/peteromallet/desloppify.git"`
 
 ## Quick Reference
 
