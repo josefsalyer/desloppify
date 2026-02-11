@@ -10,6 +10,25 @@ Supports TypeScript/React and Python. Adding a language = adding one directory.
 pip install git+https://github.com/peteromallet/desloppify.git
 ```
 
+## Use with Any AI Agent
+
+Copy-paste this into any AI coding agent (Cursor, Windsurf, Copilot, Claude Code, etc.):
+
+> Install desloppify: `pip install git+https://github.com/peteromallet/desloppify.git`
+>
+> Run `desloppify scan --path src/` to scan for code quality issues. It detects dead code, unused exports, duplication, complexity, code smells, and more (20+ detectors) and assigns a weighted health score.
+>
+> Then use this workflow:
+> - `desloppify status` — see your score and tier breakdown
+> - `desloppify next` — get the highest-priority finding to fix
+> - Fix it, then `desloppify resolve fixed "<id>"` to mark it done
+> - `desloppify fix unused-imports --dry-run` — preview auto-fixes for mechanical issues
+> - `desloppify scan --path src/` — rescan after a batch of fixes
+>
+> Work tier by tier: T1 (auto-fixable) → T2 (quick manual) → T3 (needs judgment) → T4 (major refactor). Use `desloppify show <detector>` to dig into any category, `desloppify plan` for a prioritized markdown plan, and `desloppify tree` for an annotated codebase overview.
+>
+> For Python projects, use `--lang python`. Language is auto-detected from project files if omitted.
+
 ## Claude Code Integration
 
 ### Option A: Skill (recommended)
