@@ -93,6 +93,8 @@ def create_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("--skip-slow", action="store_true", help="Skip slow detectors (dupes)")
     p_scan.add_argument("--force-resolve", action="store_true",
                         help="Bypass suspect-detector protection (use when a detector legitimately went to 0)")
+    p_scan.add_argument("--exclude", nargs="+", metavar="DIR",
+                        help="Directories to exclude from scanning (e.g. --exclude migrations tests)")
 
     p_status = sub.add_parser("status", help="Score dashboard with per-tier progress")
     p_status.add_argument("--state", type=str, default=None)
@@ -164,6 +166,8 @@ def create_parser() -> argparse.ArgumentParser:
     p_detect.add_argument("--threshold", type=float, default=None,
                           help="LOC threshold (large) or similarity (dupes)")
     p_detect.add_argument("--file", type=str, default=None, help="Show deps for specific file")
+    p_detect.add_argument("--exclude", nargs="+", metavar="DIR",
+                        help="Directories to exclude from scanning")
 
     return parser
 

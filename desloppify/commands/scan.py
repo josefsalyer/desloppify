@@ -16,6 +16,14 @@ def cmd_scan(args):
     path = Path(args.path)
     include_slow = not getattr(args, "skip_slow", False)
 
+    # Apply --exclude to file discovery
+    exclude = getattr(args, "exclude", None)
+    if exclude:
+        from ..utils import _find_source_files_cached
+        import desloppify.utils as _utils
+        _utils._extra_exclusions = tuple(exclude)
+        _find_source_files_cached.cache_clear()
+
     # Resolve language config
     from ..cli import _resolve_lang
     lang = _resolve_lang(args)

@@ -10,6 +10,9 @@ PROJECT_ROOT = Path(os.environ.get("DESLOPPIFY_ROOT", Path.cwd()))
 DEFAULT_PATH = PROJECT_ROOT / "src"
 SRC_PATH = PROJECT_ROOT / os.environ.get("DESLOPPIFY_SRC", "src")
 
+# Extra exclusions set via --exclude CLI flag, applied to all file discovery
+_extra_exclusions: tuple[str, ...] = ()
+
 COLORS = {
     "reset": "\033[0m",
     "bold": "\033[1m",
@@ -105,8 +108,9 @@ def _find_source_files_cached(path: str, extensions: tuple[str, ...],
     result = subprocess.run(args, capture_output=True, text=True, cwd=PROJECT_ROOT)
     files = [f for f in result.stdout.strip().splitlines() if f]
 
-    if exclusions:
-        files = [f for f in files if not any(ex in f for ex in exclusions)]
+    all_exclusions = (exclusions or ()) + _extra_exclusions
+    if all_exclusions:
+        files = [f for f in files if not any(ex in f for ex in all_exclusions)]
     return tuple(files)
 
 

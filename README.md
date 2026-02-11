@@ -84,6 +84,7 @@ Score is weighted (T4 = 4x T1). Strict score excludes wontfix.
 | `DESLOPPIFY_ROOT` | cwd | Project root |
 | `DESLOPPIFY_SRC` | `src` | Source directory (TS alias resolution) |
 | `--lang <name>` | auto-detected | Language selection (each has own state) |
+| `--exclude <dirs>` | none | Directories to skip (e.g. `--exclude migrations tests`) |
 
 ## Adding a Language
 
