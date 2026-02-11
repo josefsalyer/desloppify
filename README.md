@@ -17,15 +17,18 @@ Install and run desloppify to scan this codebase for code quality issues (dead c
 duplication, complexity, smells). It tracks findings and reports a health score.
 
 pip install git+https://github.com/peteromallet/desloppify.git
-desloppify scan --path src/
+desloppify scan --path .
 desloppify status
 desloppify next
+
+--path is the directory to scan (use "." for the whole project, or "src/" etc).
+Language is auto-detected. To override: desloppify --lang python scan --path .
+(note: --lang goes BEFORE the subcommand)
 
 Fix what it finds, then "desloppify resolve fixed <id>" and rescan. For false positives:
 "desloppify resolve wontfix <id> --note 'reason'" (note is required — don't skip work).
 Keep going until all issues are resolved. If you notice anything wrong or confusing about
-desloppify itself, tell me and ask if I want you to log an issue. Use --lang python for
-Python projects.
+desloppify itself, tell me and ask if I want you to log an issue.
 
 If you're Claude Code, also run:
 mkdir -p .claude/skills/desloppify && curl -sL https://raw.githubusercontent.com/peteromallet/desloppify/main/SKILL.md -o .claude/skills/desloppify/SKILL.md
