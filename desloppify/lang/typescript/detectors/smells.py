@@ -111,6 +111,168 @@ TS_SMELL_CHECKS = [
 ]
 
 
+def _build_ts_line_state(lines: list[str]) -> dict[int, str]:
+    """Build a map of line numbers that are inside block comments or template literals.
+
+    Returns {0-indexed line: reason} where reason is "block_comment" or "template_literal".
+    Lines not in the map are normal code lines suitable for regex checks.
+
+    Tracks:
+    - Block comment state (opened by /*, closed by */)
+    - Template literal state (opened by backtick, closed by backtick,
+      with ${} nesting awareness)
+    """
+    state: dict[int, str] = {}
+    in_block_comment = False
+    in_template = False
+    template_brace_depth = 0  # tracks ${} nesting inside template literals
+
+    for i, line in enumerate(lines):
+        if in_block_comment:
+            state[i] = "block_comment"
+            if "*/" in line:
+                in_block_comment = False
+            continue
+
+        if in_template:
+            state[i] = "template_literal"
+            # Scan for closing backtick or ${} nesting
+            j = 0
+            while j < len(line):
+                ch = line[j]
+                if ch == "\\" and j + 1 < len(line):
+                    j += 2
+                    continue
+                if ch == "$" and j + 1 < len(line) and line[j + 1] == "{":
+                    template_brace_depth += 1
+                    j += 2
+                    continue
+                if ch == "}" and template_brace_depth > 0:
+                    template_brace_depth -= 1
+                    j += 1
+                    continue
+                if ch == "`" and template_brace_depth == 0:
+                    in_template = False
+                    # Rest of line is normal code — don't mark it
+                    # but we already marked the line; that's fine for
+                    # line-level filtering
+                    break
+                j += 1
+            continue
+
+        # Normal code line — check for block comment or template literal start
+        j = 0
+        in_str = None
+        while j < len(line):
+            ch = line[j]
+
+            # Skip escape sequences
+            if in_str and ch == "\\" and j + 1 < len(line):
+                j += 2
+                continue
+
+            # String tracking
+            if in_str:
+                if ch == in_str:
+                    in_str = None
+                j += 1
+                continue
+
+            # Line comment — rest is not code
+            if ch == "/" and j + 1 < len(line) and line[j + 1] == "/":
+                break
+
+            # Block comment start
+            if ch == "/" and j + 1 < len(line) and line[j + 1] == "*":
+                # Check if it closes on same line
+                close = line.find("*/", j + 2)
+                if close != -1:
+                    j = close + 2
+                    continue
+                else:
+                    in_block_comment = True
+                    break
+
+            # Template literal start
+            if ch == "`":
+                # Scan for closing backtick on same line
+                k = j + 1
+                found_close = False
+                depth = 0
+                while k < len(line):
+                    c = line[k]
+                    if c == "\\" and k + 1 < len(line):
+                        k += 2
+                        continue
+                    if c == "$" and k + 1 < len(line) and line[k + 1] == "{":
+                        depth += 1
+                        k += 2
+                        continue
+                    if c == "}" and depth > 0:
+                        depth -= 1
+                        k += 1
+                        continue
+                    if c == "`" and depth == 0:
+                        found_close = True
+                        j = k + 1
+                        break
+                    k += 1
+                if found_close:
+                    continue
+                else:
+                    in_template = True
+                    template_brace_depth = depth
+                    break
+
+            if ch in ("'", '"'):
+                in_str = ch
+                j += 1
+                continue
+
+            j += 1
+
+    return state
+
+
+def _ts_match_is_in_string(line: str, match_start: int) -> bool:
+    """Check if a match position falls inside a string literal or comment on a single line.
+
+    Mirrors Python's _match_is_in_string but for TS syntax (', ", `, //).
+    """
+    i = 0
+    in_str = None
+
+    while i < len(line):
+        if i == match_start:
+            return in_str is not None
+
+        ch = line[i]
+
+        # Escape sequences inside strings
+        if in_str and ch == "\\" and i + 1 < len(line):
+            i += 2
+            continue
+
+        if in_str:
+            if ch == in_str:
+                in_str = None
+            i += 1
+            continue
+
+        # Line comment — everything after is non-code
+        if ch == "/" and i + 1 < len(line) and line[i + 1] == "/":
+            return match_start > i
+
+        if ch in ("'", '"', '`'):
+            in_str = ch
+            i += 1
+            continue
+
+        i += 1
+
+    return False
+
+
 def detect_smells(path: Path) -> tuple[list[dict], int]:
     """Detect TypeScript/React code smell patterns across the codebase.
 
@@ -130,22 +292,33 @@ def detect_smells(path: Path) -> tuple[list[dict], int]:
         except (OSError, UnicodeDecodeError):
             continue
 
+        # Build line state for string/comment filtering
+        line_state = _build_ts_line_state(lines)
+
         # Regex-based smells
         for check in checks:
             if check["pattern"] is None:
                 continue
             for i, line in enumerate(lines):
-                if re.search(check["pattern"], line):
-                    # Skip URLs assigned to module-level constants
-                    if check["id"] == "hardcoded_url" and re.match(
-                        r"^(?:export\s+)?(?:const|let|var)\s+[A-Z_][A-Z0-9_]*\s*=", line.strip()
-                    ):
-                        continue
-                    smell_counts[check["id"]].append({
-                        "file": filepath,
-                        "line": i + 1,
-                        "content": line.strip()[:100],
-                    })
+                # Skip lines inside block comments or template literals
+                if i in line_state:
+                    continue
+                m = re.search(check["pattern"], line)
+                if not m:
+                    continue
+                # Check if match is inside a single-line string or comment
+                if _ts_match_is_in_string(line, m.start()):
+                    continue
+                # Skip URLs assigned to module-level constants
+                if check["id"] == "hardcoded_url" and re.match(
+                    r"^(?:export\s+)?(?:const|let|var)\s+[A-Z_][A-Z0-9_]*\s*=", line.strip()
+                ):
+                    continue
+                smell_counts[check["id"]].append({
+                    "file": filepath,
+                    "line": i + 1,
+                    "content": line.strip()[:100],
+                })
 
         # Multi-line smell helpers (brace-tracked)
         _detect_async_no_await(filepath, content, lines, smell_counts)

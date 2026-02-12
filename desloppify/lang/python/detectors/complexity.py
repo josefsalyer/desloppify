@@ -21,19 +21,38 @@ def compute_max_params(content: str, lines: list[str]) -> tuple[int, str] | None
     return None
 
 
+def _detect_indent_unit(lines: list[str]) -> int:
+    """Detect indentation unit from file content using GCD of indentations."""
+    from math import gcd
+    indents = set()
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped and not stripped.startswith("#"):
+            indent = len(line) - len(stripped)
+            if 0 < indent <= 16:
+                indents.add(indent)
+    if not indents:
+        return 4
+    unit = 0
+    for i in indents:
+        unit = gcd(unit, i)
+    return max(unit, 1)
+
+
 def compute_nesting_depth(content: str, lines: list[str]) -> tuple[int, str] | None:
     """Find maximum nesting depth by indentation. Returns (depth, label) or None."""
-    max_indent = 0
+    indent_unit = _detect_indent_unit(lines)
+    max_depth = 0
     for line in lines:
         stripped = line.lstrip()
         if not stripped or stripped.startswith("#"):
             continue
         indent = len(line) - len(stripped)
-        level = indent // 4
-        if level > max_indent:
-            max_indent = level
-    if max_indent > 4:
-        return max_indent, f"nesting depth {max_indent}"
+        depth = indent // indent_unit
+        if depth > max_depth:
+            max_depth = depth
+    if max_depth > 4:
+        return max_depth, f"nesting depth {max_depth}"
     return None
 
 

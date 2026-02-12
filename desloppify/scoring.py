@@ -42,6 +42,9 @@ MIN_SAMPLE = 200
 # Per-file weighted failures are capped at 1.0 to match the file-based denominator.
 _FILE_BASED_DETECTORS = {"smells"}
 
+# Zones excluded from scoring (findings with these zones are skipped)
+_EXCLUDED_ZONES = {"test", "config", "generated", "vendor"}
+
 # Statuses that count as failures
 _LENIENT_FAILURES = {"open"}
 _STRICT_FAILURES = {"open", "wontfix"}
@@ -83,6 +86,8 @@ def _detector_pass_rate(
         for f in findings.values():
             if f.get("detector") != detector:
                 continue
+            if f.get("zone", "production") in _EXCLUDED_ZONES:
+                continue
             if f["status"] in failure_set:
                 weight = CONFIDENCE_WEIGHTS.get(f.get("confidence", "medium"), 0.7)
                 file_key = f.get("file", "")
@@ -93,6 +98,8 @@ def _detector_pass_rate(
         weighted_failures = 0.0
         for f in findings.values():
             if f.get("detector") != detector:
+                continue
+            if f.get("zone", "production") in _EXCLUDED_ZONES:
                 continue
             if f["status"] in failure_set:
                 weight = CONFIDENCE_WEIGHTS.get(f.get("confidence", "medium"), 0.7)

@@ -129,7 +129,11 @@ def cmd_show(args):
         for f in findings:
             status_icon = {"open": "○", "fixed": "✓", "wontfix": "—", "false_positive": "✗",
                           "auto_resolved": "◌"}.get(f["status"], "?")
-            print(f"    {status_icon} T{f['tier']} [{f['confidence']}] {f['summary']}")
+            zone_tag = ""
+            zone = f.get("zone", "production")
+            if zone != "production":
+                zone_tag = c(f" [{zone}]", "dim")
+            print(f"    {status_icon} T{f['tier']} [{f['confidence']}] {f['summary']}{zone_tag}")
 
             detail_parts = _format_detail(f.get("detail", {}))
             if detail_parts:

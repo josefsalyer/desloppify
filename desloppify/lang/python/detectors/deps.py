@@ -1,74 +1,80 @@
 """Python import graph builder — parses import/from statements, resolves to files."""
 
-import re
+import ast
 from collections import defaultdict
 from pathlib import Path
 
-from ....utils import PROJECT_ROOT, grep_files, resolve_path
+from ....utils import PROJECT_ROOT, resolve_path
 from ....detectors.graph import finalize_graph
 
 
 def build_dep_graph(path: Path) -> dict:
     """Build a dependency graph for Python files.
 
-    Parses:
-      - import foo
-      - import foo.bar
-      - from foo import bar
-      - from foo.bar import baz
-      - from . import bar  (relative)
-      - from .foo import bar  (relative)
-      - from ..foo import bar  (relative)
+    Uses ast.parse for reliable import extraction (handles multi-line imports,
+    parenthesized imports, aliases, etc.).
 
     Returns {resolved_path: {"imports": set, "importers": set, "import_count", "importer_count"}}
     """
     from ....utils import find_py_files
     py_files = find_py_files(path)
-    hits = grep_files(r"^\s*(import |from )", py_files)
 
     graph: dict[str, dict] = defaultdict(lambda: {
         "imports": set(), "importers": set(), "deferred_imports": set(),
     })
 
-    # Match both relative (from .foo import bar) and absolute (from foo import bar)
-    from_re = re.compile(r"^from\s+(\.+\w*(?:\.\w+)*|\w+(?:\.\w+)*)\s+import\s+(.+)")
-    import_re = re.compile(r"^import\s+(\w+(?:\.\w+)*)")
-
-    for filepath, _lineno, raw_content in hits:
-        content = raw_content.strip()
-        # Indented imports are inside functions/classes (deferred)
-        is_deferred = raw_content != raw_content.lstrip()
+    for filepath in py_files:
+        abs_path = filepath if Path(filepath).is_absolute() else str(PROJECT_ROOT / filepath)
+        try:
+            content = Path(abs_path).read_text()
+            tree = ast.parse(content)
+        except (OSError, UnicodeDecodeError, SyntaxError):
+            continue
 
         source_resolved = resolve_path(filepath)
         graph[source_resolved]  # ensure entry
 
-        # Skip comments
-        if content.lstrip().startswith("#"):
-            continue
+        # Collect top-level function/class line ranges to detect deferred imports
+        top_level_scopes: list[tuple[int, int]] = []
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                end = getattr(node, "end_lineno", node.lineno)
+                top_level_scopes.append((node.lineno, end))
 
-        # from X import Y
-        m = from_re.match(content)
-        if m:
-            module_path = m.group(1)
-            import_names = m.group(2)
-            targets = _resolve_python_from_import(module_path, import_names, filepath, path)
-            for target in targets:
-                graph[source_resolved]["imports"].add(target)
-                graph[target]["importers"].add(source_resolved)
-                if is_deferred:
-                    graph[source_resolved]["deferred_imports"].add(target)
-            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
 
-        # import X
-        m = import_re.match(content)
-        if m:
-            module_path = m.group(1)
-            target = _resolve_python_import(module_path, filepath, path)
-            if target:
-                graph[source_resolved]["imports"].add(target)
-                graph[target]["importers"].add(source_resolved)
-                if is_deferred:
-                    graph[source_resolved]["deferred_imports"].add(target)
+            is_deferred = any(start <= node.lineno <= end
+                              for start, end in top_level_scopes)
+
+            if isinstance(node, ast.ImportFrom):
+                # Build module_path from level (dots) + module name
+                dots = "." * (node.level or 0)
+                module = node.module or ""
+                module_path = dots + module
+
+                # Resolve each imported name for dots-only imports (from . import X)
+                if not module and node.level:
+                    import_names = ", ".join(a.name for a in node.names)
+                    targets = _resolve_python_from_import(module_path, import_names, filepath, path)
+                else:
+                    targets = _resolve_python_from_import(module_path, "", filepath, path)
+
+                for target in targets:
+                    graph[source_resolved]["imports"].add(target)
+                    graph[target]["importers"].add(source_resolved)
+                    if is_deferred:
+                        graph[source_resolved]["deferred_imports"].add(target)
+
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    target = _resolve_python_import(alias.name, filepath, path)
+                    if target:
+                        graph[source_resolved]["imports"].add(target)
+                        graph[target]["importers"].add(source_resolved)
+                        if is_deferred:
+                            graph[source_resolved]["deferred_imports"].add(target)
 
     return finalize_graph(dict(graph))
 

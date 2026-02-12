@@ -11,7 +11,7 @@ def cmd_resolve(args):
     from ..state import load_state, save_state, resolve_findings
 
     if args.status == "wontfix" and not args.note:
-        print(c("Error: --note is required for wontfix (explain why).", "red"))
+        print(c("Wontfix items become technical debt. Add --note to record your reasoning for future review.", "yellow"))
         sys.exit(1)
 
     sp = _state_path(args)

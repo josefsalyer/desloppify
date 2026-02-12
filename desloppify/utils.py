@@ -186,11 +186,30 @@ def resolve_path(filepath: str) -> str:
     return str((PROJECT_ROOT / filepath).resolve())
 
 
+def matches_exclusion(rel_path: str, exclusion: str) -> bool:
+    """Check if a relative path matches an exclusion pattern (path-component aware).
+
+    Matches if exclusion is a path component (e.g. "test" matches "test/foo.py"
+    or "src/test/bar.py") or a directory prefix (e.g. "src/test" matches
+    "src/test/bar.py"). Does NOT do substring matching — "test" will NOT match
+    "testimony.py".
+    """
+    parts = Path(rel_path).parts
+    # Direct component match
+    if exclusion in parts:
+        return True
+    # Directory prefix match (e.g. "src/test" matches "src/test/bar.py")
+    if "/" in exclusion or os.sep in exclusion:
+        normalized = exclusion.rstrip("/").rstrip(os.sep)
+        return rel_path.startswith(normalized + "/") or rel_path.startswith(normalized + os.sep)
+    return False
+
+
 def _is_excluded_dir(name: str, rel_path: str, extra: tuple[str, ...]) -> bool:
     """Check if a directory should be pruned during traversal."""
     if name in DEFAULT_EXCLUSIONS or name.endswith(".egg-info"):
         return True
-    if extra and any(ex in rel_path or ex == name for ex in extra):
+    if extra and any(matches_exclusion(rel_path, ex) or ex == name for ex in extra):
         return True
     return False
 
@@ -216,7 +235,7 @@ def _find_source_files_cached(path: str, extensions: tuple[str, ...],
             if any(fname.endswith(ext) for ext in ext_set):
                 full = os.path.join(dirpath, fname)
                 rel_file = os.path.relpath(full, PROJECT_ROOT)
-                if all_exclusions and any(ex in rel_file for ex in all_exclusions):
+                if all_exclusions and any(matches_exclusion(rel_file, ex) for ex in all_exclusions):
                     continue
                 files.append(rel_file)
     return tuple(sorted(files))

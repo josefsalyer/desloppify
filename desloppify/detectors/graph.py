@@ -15,7 +15,8 @@ def finalize_graph(graph: dict) -> dict:
     Also filters out nodes matching global --exclude patterns, and removes
     references to excluded files from all import/importer sets.
     """
-    from ..utils import _extra_exclusions
+    from .. import utils as _utils_mod
+    _extra_exclusions = _utils_mod._extra_exclusions
 
     # Remove excluded nodes and clean up references
     # Use relative paths for exclusion matching to avoid false positives
@@ -28,7 +29,7 @@ def finalize_graph(graph: dict) -> dict:
                 rel_k = str(Path(k).relative_to(PROJECT_ROOT))
             except ValueError:
                 rel_k = k
-            if any(ex in rel_k for ex in _extra_exclusions):
+            if any(_utils_mod.matches_exclusion(rel_k, ex) for ex in _extra_exclusions):
                 excluded_keys.add(k)
         for k in excluded_keys:
             del graph[k]
@@ -46,58 +47,79 @@ def finalize_graph(graph: dict) -> dict:
 
 
 def detect_cycles(graph: dict, *, skip_deferred: bool = True) -> tuple[list[dict], int]:
-    """Find import cycles using Tarjan's strongly connected components.
+    """Find import cycles using Tarjan's strongly connected components (iterative).
 
     When skip_deferred=True (default), deferred imports (inside functions) are
     excluded from cycle detection — they can't cause circular import errors.
 
     Returns (entries, total_files). Each entry: {"files": [abs_paths], "length": int}
     """
-    index_counter = [0]
-    stack: list[str] = []
+    index_counter = 0
+    scc_stack: list[str] = []
     lowlinks: dict[str, int] = {}
     index: dict[str, int] = {}
     on_stack: dict[str, bool] = {}
     sccs: list[list[str]] = []
 
-    def _get_edges(v: str) -> set:
+    def _get_edges(v: str) -> list[str]:
         node = graph.get(v, {})
         imports = node.get("imports", set())
         if skip_deferred:
             imports = imports - node.get("deferred_imports", set())
-        return imports
+        return [w for w in imports if w in graph]
 
-    def strongconnect(v: str):
-        index[v] = index_counter[0]
-        lowlinks[v] = index_counter[0]
-        index_counter[0] += 1
-        stack.append(v)
-        on_stack[v] = True
+    for root in graph:
+        if root in index:
+            continue
 
-        for w in _get_edges(v):
-            if w not in graph:
-                continue  # external dep, not in graph
-            if w not in index:
-                strongconnect(w)
-                lowlinks[v] = min(lowlinks[v], lowlinks[w])
-            elif on_stack.get(w, False):
-                lowlinks[v] = min(lowlinks[v], index[w])
+        # Iterative Tarjan's using an explicit call stack.
+        # Each frame is (node, edge_iterator, is_root_call).
+        # When we first visit a node we assign index/lowlink and push to SCC stack.
+        # When we finish iterating edges we check for SCC root.
+        call_stack: list[tuple[str, list[str], int]] = []
+        index[root] = lowlinks[root] = index_counter
+        index_counter += 1
+        scc_stack.append(root)
+        on_stack[root] = True
+        edges = _get_edges(root)
+        call_stack.append((root, edges, 0))
 
-        if lowlinks[v] == index[v]:
-            component: list[str] = []
-            while True:
-                w = stack.pop()
-                on_stack[w] = False
-                component.append(w)
-                if w == v:
-                    break
-            if len(component) > 1:
-                component.sort()
-                sccs.append(component)
+        while call_stack:
+            v, edges, ei = call_stack[-1]
 
-    for v in graph:
-        if v not in index:
-            strongconnect(v)
+            if ei < len(edges):
+                w = edges[ei]
+                call_stack[-1] = (v, edges, ei + 1)
+
+                if w not in index:
+                    # "Recurse" into w
+                    index[w] = lowlinks[w] = index_counter
+                    index_counter += 1
+                    scc_stack.append(w)
+                    on_stack[w] = True
+                    w_edges = _get_edges(w)
+                    call_stack.append((w, w_edges, 0))
+                elif on_stack.get(w, False):
+                    lowlinks[v] = min(lowlinks[v], index[w])
+            else:
+                # Done with all edges for v — check for SCC root
+                if lowlinks[v] == index[v]:
+                    component: list[str] = []
+                    while True:
+                        w = scc_stack.pop()
+                        on_stack[w] = False
+                        component.append(w)
+                        if w == v:
+                            break
+                    if len(component) > 1:
+                        component.sort()
+                        sccs.append(component)
+
+                call_stack.pop()
+                # Propagate lowlink to parent
+                if call_stack:
+                    parent = call_stack[-1][0]
+                    lowlinks[parent] = min(lowlinks[parent], lowlinks[v])
 
     return [{"files": scc, "length": len(scc)} for scc in sorted(sccs, key=lambda s: -len(s))], len(graph)
 

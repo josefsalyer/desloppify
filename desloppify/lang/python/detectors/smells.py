@@ -22,7 +22,7 @@ SMELL_CHECKS = [
     _smell("global_keyword", "Global keyword usage", "medium", r"^\s+global\s+\w+"),
     _smell("star_import", "Star import (from X import *)", "medium", r"^from\s+\S+\s+import\s+\*"),
     _smell("type_ignore", "type: ignore comment", "medium", r"#\s*type:\s*ignore"),
-    _smell("eval_exec", "eval()/exec() usage", "high", r"\b(?:eval|exec)\s*\("),
+    _smell("eval_exec", "eval()/exec() usage", "high", r"(?<!\.)(?<!\w)(?:eval|exec)\s*\("),
     _smell("magic_number", "Magic numbers (>1000 in logic)",
            "low", r"(?:==|!=|>=?|<=?|[+\-*/])\s*\d{4,}"),
     _smell("todo_fixme", "TODO/FIXME/HACK comments", "low", r"#\s*(?:TODO|FIXME|HACK|XXX)"),
@@ -39,8 +39,80 @@ SMELL_CHECKS = [
 ]
 
 
+def _build_string_line_set(lines: list[str]) -> set[int]:
+    """Build a set of 0-indexed line numbers that are inside multi-line strings.
+
+    Tracks triple-quote state across lines so regex-based checks can skip
+    lines that are inside multi-line string literals.
+    """
+    in_multiline: str | None = None  # '"""' or "'''" or None
+    string_lines: set[int] = set()
+
+    for i, line in enumerate(lines):
+        if in_multiline is not None:
+            string_lines.add(i)
+            # Check if this line closes the multi-line string
+            if in_multiline in line:
+                # Find the closing triple-quote (skip escaped ones)
+                pos = 0
+                while pos < len(line):
+                    idx = line.find(in_multiline, pos)
+                    if idx == -1:
+                        break
+                    # Check it's not escaped
+                    backslashes = 0
+                    j = idx - 1
+                    while j >= 0 and line[j] == "\\":
+                        backslashes += 1
+                        j -= 1
+                    if backslashes % 2 == 0:
+                        in_multiline = None
+                        break
+                    pos = idx + 3
+            continue
+
+        # Check if this line opens a multi-line string
+        pos = 0
+        while pos < len(line):
+            ch = line[pos]
+            if ch == "#":
+                break  # Rest is comment
+            # Skip string prefixes
+            if ch in ("r", "b", "f", "u", "R", "B", "F", "U") and pos + 1 < len(line):
+                next_ch = line[pos + 1]
+                if next_ch in ('"', "'"):
+                    pos += 1
+                    ch = next_ch
+                elif (next_ch in ("r", "b", "f", "R", "B", "F")
+                      and pos + 2 < len(line) and line[pos + 2] in ('"', "'")):
+                    pos += 2
+                    ch = line[pos]
+            if ch in ('"', "'"):
+                triple = line[pos:pos + 3]
+                if triple in ('"""', "'''"):
+                    # Check if it closes on the same line
+                    close_idx = line.find(triple, pos + 3)
+                    if close_idx == -1:
+                        # Opens a multi-line string
+                        in_multiline = triple
+                        break
+                    else:
+                        pos = close_idx + 3
+                        continue
+                else:
+                    # Single-line string — skip to closing quote
+                    end = line.find(ch, pos + 1)
+                    while end != -1 and end > 0 and line[end - 1] == "\\":
+                        end = line.find(ch, end + 1)
+                    pos = (end + 1) if end != -1 else len(line)
+                    continue
+            pos += 1
+
+    return string_lines
+
+
 def _match_is_in_string(line: str, match_start: int) -> bool:
-    """Check if a regex match position falls inside a string literal or comment."""
+    """Check if a regex match position falls inside a string literal or comment on a single line."""
     i, in_string = 0, None
     while i < len(line):
         if i == match_start:
@@ -91,10 +163,16 @@ def detect_smells(path: Path) -> tuple[list[dict], int]:
         except (OSError, UnicodeDecodeError):
             continue
 
+        # Build set of lines inside multi-line strings to avoid false positives
+        multiline_string_lines = _build_string_line_set(lines)
+
         for check in SMELL_CHECKS:
             if check["pattern"] is None:
                 continue
             for i, line in enumerate(lines):
+                # Skip lines inside multi-line strings
+                if i in multiline_string_lines:
+                    continue
                 m = re.search(check["pattern"], line)
                 if m and not _match_is_in_string(line, m.start()):
                     # Skip URLs assigned to module-level constants (UPPER_CASE = "https://...")
