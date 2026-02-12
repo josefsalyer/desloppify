@@ -123,7 +123,6 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
                    if data.get("checks", 0) > 0]
     row_count = len(active_dims)
     W = _s(420)
-    margin = _s(12)
     inner = _s(18)
     table_top = _s(146)
     row_h = _s(22)

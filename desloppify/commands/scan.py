@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ..utils import c, PROJECT_ROOT
+from ..utils import c
 from ..cli import _state_path, _write_query
 
 
