@@ -1,5 +1,7 @@
 # Desloppify
 
+![Desloppify Score](scorecard.png)
+
 Codebase health scanner. Detects cruft (dead code, duplication, complexity, smells), tracks findings across scans, auto-fixes mechanical issues, reports a weighted score. TypeScript/React and Python out of the box — [add your own language](#adding-a-language) with one directory.
 
 ## Install
@@ -86,6 +88,10 @@ Score is weighted (T4 = 4x T1). Strict score excludes wontfix.
 | `DESLOPPIFY_SRC` | `src` | Source directory (TS alias resolution) |
 | `--lang <name>` | auto-detected | Language selection (each has own state) |
 | `--exclude <dirs>` | none | Directories to skip (e.g. `--exclude migrations tests`) |
+| `--no-badge` | false | Skip scorecard image generation |
+| `--badge-path <path>` | `scorecard.png` | Output path for scorecard image |
+| `DESLOPPIFY_NO_BADGE` | — | Set to `true` to disable badge via env |
+| `DESLOPPIFY_BADGE_PATH` | `scorecard.png` | Badge output path via env |
 
 ## Adding a Language
 

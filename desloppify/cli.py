@@ -101,6 +101,10 @@ def create_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("--skip-slow", action="store_true", help="Skip slow detectors (dupes)")
     p_scan.add_argument("--force-resolve", action="store_true",
                         help="Bypass suspect-detector protection (use when a detector legitimately went to 0)")
+    p_scan.add_argument("--no-badge", action="store_true",
+                        help="Skip scorecard image generation (also: DESLOPPIFY_NO_BADGE=true)")
+    p_scan.add_argument("--badge-path", type=str, default=None, metavar="PATH",
+                        help="Output path for scorecard image (default: scorecard.png)")
 
     p_status = sub.add_parser("status", help="Score dashboard with per-tier progress")
     p_status.add_argument("--state", type=str, default=None)

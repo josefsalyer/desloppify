@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ..utils import c
+from ..utils import c, PROJECT_ROOT
 from ..cli import _state_path, _write_query
 
 
@@ -179,6 +179,18 @@ def cmd_scan(args):
                   "objective_strict": state.get("objective_strict"),
                   "dimension_scores": state.get("dimension_scores"),
                   "potentials": state.get("potentials")})
+
+    # Generate scorecard badge
+    try:
+        from ..badge import generate_scorecard, get_badge_config
+        badge_path, disabled = get_badge_config(args)
+        if not disabled and badge_path:
+            generate_scorecard(state, badge_path)
+            rel_path = badge_path.name if badge_path.parent == PROJECT_ROOT else str(badge_path)
+            print(c(f"  Scorecard → {rel_path}", "dim") +
+                  c(f"  (disable: --no-badge | move: --badge-path <path>)", "dim"))
+    except ImportError:
+        pass  # Pillow not installed — skip silently
 
 
 def _show_detector_progress(state: dict):
