@@ -35,7 +35,7 @@ mkdir -p .claude/skills/desloppify && curl -sL https://raw.githubusercontent.com
 
 ## Vibe Engineer?
 
-Are you a hardcore vibe engineer who wants to build beautiful things? [This may be the place for you.](https://discord.gg/z7EUWAMVX4)
+Are you a hardcore vibe engineer who wants to build beautiful things? [This may grow to become the place for you.](https://discord.gg/z7EUWAMVX4)
 
 ---
 
