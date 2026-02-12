@@ -199,7 +199,7 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     strict_y = content_top + score_h + content_gap
     # Baseline-align the two strict texts
     draw.text((strict_x, strict_y - strict_label_bbox[1]), strict_label, fill=DIM, font=font_strict_label)
-    draw.text((strict_x + sl_w + gap, strict_y - strict_val_bbox[1]), strict_val, fill=_score_color(strict_score), font=font_strict_val)
+    draw.text((strict_x + sl_w + gap, strict_y - strict_val_bbox[1]), strict_val, fill=_score_color(strict_score, muted=True), font=font_strict_val)
 
     # --- Ornamental rule above table ---
     rule2_y = table_top - _s(10)
