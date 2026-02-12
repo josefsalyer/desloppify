@@ -43,6 +43,9 @@ DETECTOR_TOOLS = {
                    "guidance": "extract shared utility or consolidate duplicates"},
     "patterns":   {"fixers": [], "action_type": "refactor",
                    "guidance": "align to single pattern across the codebase"},
+    "dict_keys":  {"fixers": [], "action_type": "refactor",
+                   "guidance": "fix dict key mismatches — dead writes are likely dead code, "
+                               "schema drift suggests a typo or missed rename"},
 }
 
 # Structural sub-detectors that merge under "structural" — shared constant

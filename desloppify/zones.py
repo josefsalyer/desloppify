@@ -183,27 +183,29 @@ class ZonePolicy:
 ZONE_POLICIES: dict[Zone, ZonePolicy] = {
     Zone.PRODUCTION: ZonePolicy(),
     Zone.TEST: ZonePolicy(
-        skip_detectors={"dupes", "single_use", "orphaned", "coupling", "facade"},
+        skip_detectors={"dupes", "single_use", "orphaned", "coupling", "facade",
+                        "dict_keys"},
         downgrade_detectors={"smells", "structural"},
         exclude_from_score=True,
     ),
     Zone.CONFIG: ZonePolicy(
         skip_detectors={"smells", "structural", "dupes", "naming",
-                        "single_use", "orphaned", "coupling", "facade"},
+                        "single_use", "orphaned", "coupling", "facade",
+                        "dict_keys"},
         exclude_from_score=True,
     ),
     Zone.GENERATED: ZonePolicy(
         skip_detectors={"unused", "logs", "exports", "deprecated", "structural",
                         "props", "smells", "react", "dupes", "single_use",
                         "orphaned", "coupling", "facade", "naming", "patterns",
-                        "cycles", "flat_dirs"},
+                        "cycles", "flat_dirs", "dict_keys"},
         exclude_from_score=True,
     ),
     Zone.VENDOR: ZonePolicy(
         skip_detectors={"unused", "logs", "exports", "deprecated", "structural",
                         "props", "smells", "react", "dupes", "single_use",
                         "orphaned", "coupling", "facade", "naming", "patterns",
-                        "cycles", "flat_dirs"},
+                        "cycles", "flat_dirs", "dict_keys"},
         exclude_from_score=True,
     ),
     Zone.SCRIPT: ZonePolicy(

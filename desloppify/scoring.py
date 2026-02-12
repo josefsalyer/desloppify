@@ -25,7 +25,7 @@ DIMENSIONS = [
     Dimension("Component design",    3, ["props"]),
     Dimension("Coupling",            3, ["single_use", "coupling"]),
     Dimension("Organization",        3, ["orphaned", "flat_dirs", "naming", "facade"]),
-    Dimension("Code quality",        3, ["smells", "react"]),
+    Dimension("Code quality",        3, ["smells", "react", "dict_keys"]),
     Dimension("Duplication",         3, ["dupes"]),
     Dimension("Pattern consistency", 3, ["patterns"]),
     Dimension("Dependency health",   4, ["cycles"]),
@@ -40,7 +40,7 @@ MIN_SAMPLE = 200
 
 # Detectors where potential = file count but findings are per-(file, sub-type).
 # Per-file weighted failures are capped at 1.0 to match the file-based denominator.
-_FILE_BASED_DETECTORS = {"smells"}
+_FILE_BASED_DETECTORS = {"smells", "dict_keys"}
 
 # Zones excluded from scoring (findings with these zones are skipped)
 _EXCLUDED_ZONES = {"test", "config", "generated", "vendor"}

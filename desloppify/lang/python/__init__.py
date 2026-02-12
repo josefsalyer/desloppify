@@ -195,6 +195,45 @@ def _phase_smells(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, i
     }
 
 
+def _phase_dict_keys(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int]]:
+    from .detectors.dict_keys import detect_dict_key_flow, detect_schema_drift
+    from ...state import make_finding
+
+    # Pass 1: Single-scope analysis
+    flow_entries, files_checked = detect_dict_key_flow(path)
+    flow_entries = filter_entries(lang._zone_map, flow_entries, "dict_keys")
+
+    results = []
+    for e in flow_entries:
+        results.append(make_finding(
+            "dict_keys", e["file"], f"{e['kind']}::{e['variable']}::{e['key']}"
+            if "variable" in e else f"{e['kind']}::{e['key']}::{e['line']}",
+            tier=e["tier"], confidence=e["confidence"],
+            summary=e["summary"],
+            detail={"kind": e["kind"], "key": e.get("key", ""),
+                    "line": e.get("line"), "info": e.get("detail", "")},
+        ))
+
+    # Pass 2: Schema clustering
+    drift_entries, literals_checked = detect_schema_drift(path)
+    drift_entries = filter_entries(lang._zone_map, drift_entries, "dict_keys")
+
+    for e in drift_entries:
+        results.append(make_finding(
+            "dict_keys", e["file"], f"schema_drift::{e['key']}::{e['line']}",
+            tier=e["tier"], confidence=e["confidence"],
+            summary=e["summary"],
+            detail={"kind": "schema_drift", "key": e["key"],
+                    "line": e["line"], "info": e.get("detail", "")},
+        ))
+
+    log(f"         -> {len(results)} dict key findings")
+    potentials = {
+        "dict_keys": adjust_potential(lang._zone_map, files_checked),
+    }
+    return results, potentials
+
+
 # ── Build the config ──────────────────────────────────────
 
 
@@ -229,6 +268,7 @@ class PythonConfig(LangConfig):
                 DetectorPhase("Structural analysis", _phase_structural),
                 DetectorPhase("Coupling + cycles + orphaned", _phase_coupling),
                 DetectorPhase("Code smells", _phase_smells),
+                DetectorPhase("Dict key flow", _phase_dict_keys),
                 DetectorPhase("Duplicates", phase_dupes, slow=True),
             ],
             fixers={},
