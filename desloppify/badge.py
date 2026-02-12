@@ -220,7 +220,7 @@ def generate_scorecard(state: dict, output_path: str | Path) -> Path:
     header_bbox = draw.textbbox((0, 0), "Dimension", font=font_header)
     header_h = header_bbox[3] - header_bbox[1]
     rule_gap = _s(4)
-    rows_gap = _s(10)  # gap between header underline and first row
+    rows_gap = _s(6)  # gap between header underline and first row
 
     # Total table content: header + rule + gap + rows
     table_content_h = header_h + rule_gap + rows_gap + row_count * row_h
