@@ -310,9 +310,9 @@ def phase_dupes(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, int
     from ..detectors.dupes import detect_duplicates
     from ..utils import log
     functions = lang.extract_functions(path)
-    entries, total_pairs = detect_duplicates(functions)
+    entries, total_functions = detect_duplicates(functions)
     findings = make_dupe_findings(entries, log)
-    return findings, {"dupes": total_pairs}
+    return findings, {"dupes": total_functions}
 
 
 def make_passthrough_findings(

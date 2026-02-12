@@ -92,9 +92,9 @@ def compute_dimension_scores(
     results: dict[str, dict] = {}
 
     for dim in DIMENSIONS:
-        detector_rates = []
         total_checks = 0
         total_issues = 0
+        total_weighted_failures = 0.0
         detector_detail = {}
 
         for det in dim.detectors:
@@ -103,18 +103,19 @@ def compute_dimension_scores(
                 continue
             rate, issues, weighted = _detector_pass_rate(
                 det, findings, pot, strict=strict)
-            detector_rates.append(rate)
             total_checks += pot
             total_issues += issues
+            total_weighted_failures += weighted
             detector_detail[det] = {
                 "potential": pot, "pass_rate": rate,
                 "issues": issues, "weighted_failures": weighted,
             }
 
-        if not detector_rates:
+        if total_checks <= 0:
             continue
 
-        dim_score = sum(detector_rates) / len(detector_rates) * 100
+        # Potential-weighted pass rate: treats the dimension as one big pool
+        dim_score = max(0.0, (total_checks - total_weighted_failures) / total_checks) * 100
 
         results[dim.name] = {
             "score": round(dim_score, 1),
@@ -181,16 +182,21 @@ def compute_score_impact(
     new_weighted = max(0.0, old_weighted - issues_to_fix * 1.0)
     new_rate = max(0.0, (pot - new_weighted) / pot)
 
-    # Recompute dimension score with new rate
-    other_rates = []
+    # Recompute dimension score with potential-weighted averaging
+    total_pot = 0
+    total_new_wf = 0.0
     for det in target_dim.detectors:
-        if det == detector:
-            continue
         d = dim_data["detectors"].get(det)
-        if d:
-            other_rates.append(d["pass_rate"])
-    all_rates = other_rates + [new_rate]
-    new_dim_score = sum(all_rates) / len(all_rates) * 100
+        if not d:
+            continue
+        total_pot += d["potential"]
+        if det == detector:
+            total_new_wf += new_weighted
+        else:
+            total_new_wf += d["weighted_failures"]
+    if total_pot <= 0:
+        return 0.0
+    new_dim_score = max(0.0, (total_pot - total_new_wf) / total_pot) * 100
 
     # Recompute overall with the new dimension score
     simulated = {k: dict(v) for k, v in dimension_scores.items()}
