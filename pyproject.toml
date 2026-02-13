@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Multi-language codebase health scanner and technical debt tracker"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = ["Pillow>=9.0.0"]
+dependencies = ["Pillow>=9.0.0", "pyyaml>=6.0"]
 
 [project.scripts]
 desloppify = "desloppify.cli:main"
