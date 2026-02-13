@@ -173,7 +173,7 @@ def display_entries(args, entries, *, label, empty_msg, columns, widths, row_fn,
 
 def rel(path: str) -> str:
     try:
-        return str(Path(path).resolve().relative_to(PROJECT_ROOT))
+        return str(Path(path).resolve().relative_to(PROJECT_ROOT)).replace("\\", "/")
     except ValueError:
         return path
 
@@ -227,15 +227,15 @@ def _find_source_files_cached(path: str, extensions: tuple[str, ...],
     files: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
         # Prune excluded directories in-place (prevents descending into them)
-        rel_dir = os.path.relpath(dirpath, PROJECT_ROOT)
+        rel_dir = os.path.relpath(dirpath, PROJECT_ROOT).replace("\\", "/")
         dirnames[:] = sorted(
             d for d in dirnames
-            if not _is_excluded_dir(d, os.path.join(rel_dir, d), all_exclusions)
+            if not _is_excluded_dir(d, rel_dir + "/" + d, all_exclusions)
         )
         for fname in filenames:
             if any(fname.endswith(ext) for ext in ext_set):
                 full = os.path.join(dirpath, fname)
-                rel_file = os.path.relpath(full, PROJECT_ROOT)
+                rel_file = os.path.relpath(full, PROJECT_ROOT).replace("\\", "/")
                 if all_exclusions and any(matches_exclusion(rel_file, ex) for ex in all_exclusions):
                     continue
                 files.append(rel_file)

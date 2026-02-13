@@ -30,7 +30,7 @@ def _compute_ts_specifiers(from_file: str, to_file: str) -> tuple[str | None, st
     alias = None
     try:
         to_rel_src = to_path.relative_to(SRC_PATH)
-        alias = "@/" + _strip_ts_ext(str(to_rel_src))
+        alias = "@/" + _strip_ts_ext(str(to_rel_src).replace("\\", "/"))
         if alias.endswith("/index"):
             alias = alias[:-6]
     except ValueError:
@@ -38,7 +38,7 @@ def _compute_ts_specifiers(from_file: str, to_file: str) -> tuple[str | None, st
 
     # Relative specifier
     from_dir = Path(from_file).parent
-    relative = os.path.relpath(to_file, from_dir)
+    relative = os.path.relpath(to_file, from_dir).replace("\\", "/")
     relative = _strip_ts_ext(relative)
     if not relative.startswith("."):
         relative = "./" + relative
