@@ -397,7 +397,8 @@ def _phase_smells(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, i
         log(f"         signature variance: {len(sig_entries)} functions with inconsistent signatures")
 
     # TS-specific: React state sync anti-patterns
-    from .detectors.react import detect_state_sync, detect_context_nesting, detect_hook_return_bloat
+    from .detectors.react import (detect_state_sync, detect_context_nesting,
+                                    detect_hook_return_bloat, detect_boolean_state_explosion)
     react_entries, total_effects = detect_state_sync(path)
     for e in react_entries:
         setter_str = ", ".join(e["setters"])
@@ -434,6 +435,20 @@ def _phase_smells(path: Path, lang: LangConfig) -> tuple[list[dict], dict[str, i
         ))
     if hook_entries:
         log(f"         react: {len(hook_entries)} bloated hook returns")
+
+    # TS-specific: Boolean state explosion
+    bool_entries, _ = detect_boolean_state_explosion(path)
+    for e in bool_entries:
+        states_str = ", ".join(e["states"][:5])
+        results.append(make_finding(
+            "react", e["file"], f"bool_state::{e['prefix']}",
+            tier=3, confidence="low",
+            summary=f"Boolean state explosion: {e['count']} boolean useState hooks ({states_str})",
+            detail={"count": e["count"], "setters": e["setters"],
+                    "states": e["states"], "line": e["line"]},
+        ))
+    if bool_entries:
+        log(f"         react: {len(bool_entries)} boolean state explosions")
 
     return results, {
         "smells": adjust_potential(lang._zone_map, total_smell_files),

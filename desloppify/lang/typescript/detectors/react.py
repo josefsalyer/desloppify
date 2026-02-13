@@ -335,6 +335,85 @@ def _count_return_fields(func_body: str) -> int | None:
     return field_count
 
 
+def detect_boolean_state_explosion(path: Path) -> tuple[list[dict], int]:
+    """Find components with 3+ boolean useState hooks suggesting mutually exclusive states.
+
+    Looks for patterns like:
+        const [showX, setShowX] = useState(false);
+        const [showY, setShowY] = useState(false);
+        const [showZ, setShowZ] = useState(false);
+
+    When setters share a common prefix pattern (setShow*, setIs*Open, etc.),
+    these are likely mutually exclusive states that should be a single
+    discriminated union value.
+    """
+    entries = []
+    total_components = 0
+    # Match useState(false) or useState<boolean>(false)
+    bool_state_re = re.compile(
+        r"const\s+\[(\w+),\s*(set\w+)\]\s*=\s*useState(?:<boolean>)?\s*\(\s*false\s*\)"
+    )
+
+    for filepath in find_tsx_files(path):
+        try:
+            p = Path(filepath) if Path(filepath).is_absolute() else PROJECT_ROOT / filepath
+            content = p.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        matches = list(bool_state_re.finditer(content))
+        if len(matches) < 3:
+            continue
+
+        total_components += 1
+
+        # Group boolean states by their setter name prefix pattern
+        # e.g., setShowExport, setShowDelete -> "setShow"
+        # e.g., isModalOpen, isDialogOpen -> "is...Open"
+        states = [(m.group(1), m.group(2), content[:m.start()].count("\n") + 1)
+                  for m in matches]
+
+        # Check for common prefix in setter names (at least 3 chars after "set")
+        setter_names = [s[1] for s in states]
+        prefixes: dict[str, list[tuple]] = {}
+        for state_name, setter, line in states:
+            # Extract prefix: "setShow" from "setShowExport", "setIs" from "setIsOpen"
+            # Look for where the varying part starts (first uppercase after "set" + camelCase)
+            bare = setter[3:]  # remove "set"
+            # Find split point — after the common prefix word
+            for k in range(2, len(bare)):
+                if bare[k].isupper():
+                    prefix = "set" + bare[:k]
+                    prefixes.setdefault(prefix, []).append((state_name, setter, line))
+                    break
+
+        # Find groups with 3+ members
+        for prefix, group in prefixes.items():
+            if len(group) >= 3:
+                entries.append({
+                    "file": filepath,
+                    "line": group[0][2],
+                    "count": len(group),
+                    "setters": [g[1] for g in group],
+                    "states": [g[0] for g in group],
+                    "prefix": prefix,
+                })
+                break  # one finding per file
+
+        # Also flag if there are 4+ boolean useState regardless of prefix pattern
+        if not any(e["file"] == filepath for e in entries) and len(states) >= 4:
+            entries.append({
+                "file": filepath,
+                "line": states[0][2],
+                "count": len(states),
+                "setters": [s[1] for s in states],
+                "states": [s[0] for s in states],
+                "prefix": "(mixed)",
+            })
+
+    return sorted(entries, key=lambda e: -e["count"]), total_components
+
+
 def cmd_react(args):
     """Show React anti-patterns (state sync via useEffect)."""
     entries, _ = detect_state_sync(Path(args.path))

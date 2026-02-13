@@ -18,6 +18,7 @@ from ._smell_helpers import (
     _detect_dead_functions,
     _detect_window_globals,
     _detect_catch_return_default,
+    _detect_switch_no_default,
 )
 
 
@@ -155,6 +156,24 @@ TS_SMELL_CHECKS = [
         "label": "Catch block returns default object (silent failure)",
         "pattern": None,  # multi-line brace-tracked
         "severity": "high",
+    },
+    {
+        "id": "as_any_cast",
+        "label": "`as any` type casts",
+        "pattern": r"\bas\s+any\b",
+        "severity": "medium",
+    },
+    {
+        "id": "sort_no_comparator",
+        "label": ".sort() without comparator function",
+        "pattern": r"\.sort\(\s*\)",
+        "severity": "medium",
+    },
+    {
+        "id": "switch_no_default",
+        "label": "Switch without default case",
+        "pattern": None,  # multi-line brace-tracked
+        "severity": "low",
     },
 ]
 
@@ -339,6 +358,7 @@ def detect_smells(path: Path) -> tuple[list[dict], int]:
         _detect_dead_functions(filepath, lines, smell_counts)
         _detect_window_globals(filepath, lines, line_state, smell_counts)
         _detect_catch_return_default(filepath, content, smell_counts)
+        _detect_switch_no_default(filepath, content, smell_counts)
 
     # Build summary entries sorted by severity then count
     severity_order = {"high": 0, "medium": 1, "low": 2}

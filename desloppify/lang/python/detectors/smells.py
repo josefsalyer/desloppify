@@ -50,6 +50,7 @@ SMELL_CHECKS = [
     _smell("constant_return", "Function always returns the same constant value", "medium"),
     _smell("regex_backtrack", "Regex with nested quantifiers (ReDoS risk)", "high"),
     _smell("naive_comment_strip", "re.sub strips comments without string awareness", "medium"),
+    _smell("callback_logging", "Logging callback parameter (use module-level logger instead)", "medium"),
 ]
 
 
@@ -295,6 +296,7 @@ def _detect_ast_smells(filepath: str, content: str, smell_counts: dict[str, list
     _detect_constant_return(filepath, tree, smell_counts)
     _detect_regex_backtrack(filepath, tree, smell_counts)
     _detect_naive_comment_strip(filepath, tree, smell_counts)
+    _detect_callback_logging(filepath, tree, smell_counts)
 
 
 def _detect_monster_functions(filepath: str, node: ast.AST, smell_counts: dict[str, list]):
@@ -843,3 +845,45 @@ def _resolve_import_target(module: str, level: int, file_dir: Path,
         return module_path
 
     return None
+
+
+# ── Callback logging detector ───────────────────────────────────
+
+_CALLBACK_LOG_NAMES = {
+    "dprint", "debug_print", "debug_func", "log_func", "log_fn",
+    "print_fn", "logger_func", "log_callback", "print_func",
+    "debug_log", "verbose_print", "trace_func",
+}
+
+
+def _detect_callback_logging(filepath: str, tree: ast.Module,
+                              smell_counts: dict[str, list]):
+    """Flag functions that accept a logging callback parameter.
+
+    Detects parameters matching common logging-callback names (dprint, log_func, etc.)
+    that are actually called with string arguments in the function body.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+
+        # Check each parameter name
+        for arg in node.args.args + node.args.kwonlyargs:
+            name = arg.arg
+            if name not in _CALLBACK_LOG_NAMES:
+                continue
+
+            # Verify it's actually called in the body (not just accepted)
+            call_count = 0
+            for child in ast.walk(node):
+                if (isinstance(child, ast.Call)
+                        and isinstance(child.func, ast.Name)
+                        and child.func.id == name):
+                    call_count += 1
+
+            if call_count >= 1:
+                smell_counts["callback_logging"].append({
+                    "file": filepath,
+                    "line": node.lineno,
+                    "content": f"{node.name}({name}=...) — called {call_count} time(s)",
+                })

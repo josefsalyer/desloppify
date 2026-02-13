@@ -661,3 +661,56 @@ def _detect_catch_return_default(filepath: str, content: str,
                 "line": line_no,
                 "content": content[line_start:line_end].strip()[:100],
             })
+
+
+def _detect_switch_no_default(filepath: str, content: str,
+                               smell_counts: dict[str, list[dict]]):
+    """Flag switch statements that have no default case."""
+    switch_re = re.compile(r"\bswitch\s*\([^)]*\)\s*\{")
+    for m in switch_re.finditer(content):
+        brace_start = m.end() - 1
+        depth = 0
+        in_str = None
+        prev_ch = ""
+        body_end = None
+        for ci in range(brace_start, min(brace_start + 5000, len(content))):
+            ch = content[ci]
+            if in_str:
+                if ch == in_str and prev_ch != "\\":
+                    in_str = None
+                prev_ch = ch
+                continue
+            if ch in "'\"`":
+                in_str = ch
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    body_end = ci
+                    break
+            prev_ch = ch
+
+        if body_end is None:
+            continue
+
+        body = content[brace_start + 1:body_end]
+        # Count case labels — only flag if there are actual cases
+        case_count = len(re.findall(r"\bcase\s+", body))
+        if case_count < 2:
+            continue
+
+        # Check for default: anywhere in the switch body
+        if re.search(r"\bdefault\s*:", body):
+            continue
+
+        line_no = content[:m.start()].count("\n") + 1
+        line_start = content.rfind("\n", 0, m.start()) + 1
+        line_end = content.find("\n", m.start())
+        if line_end == -1:
+            line_end = len(content)
+        smell_counts["switch_no_default"].append({
+            "file": filepath,
+            "line": line_no,
+            "content": content[line_start:line_end].strip()[:100],
+        })
