@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from .. import register_lang
-from ..base import (DetectorPhase, LangConfig,
+from ..base import (DetectorPhase, FixerConfig, LangConfig,
                     add_structural_signal, merge_structural_signals,
                     make_single_use_findings, make_cycle_findings,
                     make_orphaned_findings, make_smell_findings,
@@ -271,6 +271,49 @@ def _go_extract_functions(path: Path) -> list:
     return functions
 
 
+def _get_go_fixers() -> dict[str, FixerConfig]:
+    """Build the Go fixer registry (lazy-loaded)."""
+    _imp = lambda mod, fn: getattr(
+        __import__(f"desloppify.lang.go.fixers.{mod}", fromlist=[fn]), fn)
+    return {
+        "error-wrap": FixerConfig(
+            label="bare error returns",
+            detect=lambda p: _imp("error_wrap", "detect_bare_errors")(p),
+            fix=lambda e, **kw: _imp("error_wrap", "fix_error_wrap")(e, **kw),
+            detector="smells",
+            verb="Wrapped", dry_verb="Would wrap",
+        ),
+        "error-strings": FixerConfig(
+            label="error string format",
+            detect=lambda p: _imp("error_strings", "detect_error_strings")(p),
+            fix=lambda e, **kw: _imp("error_strings", "fix_error_strings")(e, **kw),
+            detector="smells",
+            verb="Fixed", dry_verb="Would fix",
+        ),
+        "regex-hoist": FixerConfig(
+            label="regex in loop",
+            detect=lambda p: _imp("regex_hoist", "detect_regex_in_loop")(p),
+            fix=lambda e, **kw: _imp("regex_hoist", "fix_regex_hoist")(e, **kw),
+            detector="smells",
+            verb="Hoisted", dry_verb="Would hoist",
+        ),
+        "string-builder": FixerConfig(
+            label="string concat in loop",
+            detect=lambda p: _imp("string_builder", "detect_string_concat")(p),
+            fix=lambda e, **kw: _imp("string_builder", "fix_string_builder")(e, **kw),
+            detector="smells",
+            verb="Replaced", dry_verb="Would replace",
+        ),
+        "mutex-pointer": FixerConfig(
+            label="mutex by value",
+            detect=lambda p: _imp("mutex_pointer", "detect_mutex_copy")(p),
+            fix=lambda e, **kw: _imp("mutex_pointer", "fix_mutex_pointer")(e, **kw),
+            detector="smells",
+            verb="Fixed", dry_verb="Would fix",
+        ),
+    }
+
+
 @register_lang("go")
 class GoConfig(LangConfig):
     def __init__(self):
@@ -291,7 +334,7 @@ class GoConfig(LangConfig):
                 DetectorPhase("Code smells", _phase_smells),
                 DetectorPhase("Duplicates", phase_dupes, slow=True),
             ],
-            fixers={},
+            fixers=_get_go_fixers(),
             get_area=_get_go_area,
             detect_commands=get_detect_commands(),
             boundaries=[],
