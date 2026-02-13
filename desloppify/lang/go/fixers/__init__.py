@@ -1,1 +1,1 @@
-"""Go auto-fixers (not yet implemented)."""
+"""Go auto-fixers for mechanical cleanup tasks."""
