@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from ...detectors.base import FunctionInfo, ClassInfo
 from ...utils import PROJECT_ROOT
+
+# Path to the go-extract helper source
+_GO_EXTRACT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "cmd" / "go-extract"
 
 
 def _read_file(filepath: str | Path) -> str | None:
@@ -86,8 +92,57 @@ def _find_matching_brace(lines: list[str], start_line: int, start_col: int = 0) 
     return None
 
 
+def _try_go_helper(filepath: Path | str) -> list[FunctionInfo] | None:
+    """Try extracting functions via the Go AST helper binary.
+
+    Returns None if Go is not available, letting the caller fall back to regex.
+    """
+    if not shutil.which("go"):
+        return None
+
+    filepath_str = str(filepath)
+    try:
+        result = subprocess.run(
+            ["go", "run", str(_GO_EXTRACT_DIR), filepath_str],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    functions = []
+    for f in data.get("functions", []):
+        body = f.get("body", "")
+        normalized = _normalize_go_body(body)
+        functions.append(FunctionInfo(
+            name=f["name"],
+            file=filepath_str,
+            line=f.get("line", 0),
+            end_line=f.get("end_line", 0),
+            loc=f.get("loc", 0),
+            body=body,
+            normalized=normalized,
+            body_hash=hashlib.md5(normalized.encode()).hexdigest(),
+            params=f.get("params", []),
+        ))
+    return functions
+
+
 def extract_go_functions(filepath: Path | str) -> list[FunctionInfo]:
-    """Extract all functions from a Go file."""
+    """Extract all functions from a Go file.
+
+    Tries the Go AST helper first, falls back to regex.
+    """
+    result = _try_go_helper(filepath)
+    if result is not None:
+        return result
     return _extract_functions_regex(filepath)
 
 
