@@ -22,9 +22,13 @@ def _build_reference_index(search_path: Path, names: set[str]) -> dict[str, set[
     """Build a map of symbol name -> set of files that contain it (word-boundary match)."""
     if not names:
         return {}
-    from ....utils import find_ts_files
+    from ....utils import find_ts_files, find_source_files
+    from .deps import _FRAMEWORK_EXTENSIONS
     ts_files = find_ts_files(search_path)
-    raw = grep_files_containing(names, ts_files, word_boundary=True)
+    # Also search framework files that may reference these exports
+    fw_files = find_source_files(search_path, list(_FRAMEWORK_EXTENSIONS))
+    all_files = ts_files + fw_files
+    raw = grep_files_containing(names, all_files, word_boundary=True)
     # Convert to resolved paths for comparison
     return {name: {resolve_path(f) for f in files} for name, files in raw.items()}
 

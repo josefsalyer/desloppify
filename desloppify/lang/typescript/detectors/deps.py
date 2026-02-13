@@ -8,50 +8,183 @@ from pathlib import Path
 from ....utils import PROJECT_ROOT, SRC_PATH, c, grep_files, print_table, rel, resolve_path
 from ....detectors.graph import detect_cycles, get_coupling_score, finalize_graph
 
+# Extensions for framework files whose imports should be included in the graph.
+# These files can import .ts/.tsx modules but aren't .ts/.tsx themselves.
+_FRAMEWORK_EXTENSIONS = (".svelte", ".vue", ".astro")
+
+# Extensions to try when resolving an import specifier to a file on disk.
+_RESOLVE_EXTENSIONS = ("", ".ts", ".tsx", "/index.ts", "/index.tsx")
+
+# ── tsconfig paths resolution ──────────────────────────────
+
+_tsconfig_cache: dict[str, dict[str, str]] = {}
+
+
+def _load_tsconfig_paths(project_root: Path) -> dict[str, str]:
+    """Parse tsconfig.json compilerOptions.paths into {prefix: directory}.
+
+    Returns e.g. {"@/": "src/", "@components/": "src/components/"}.
+    Falls back to {"@/": "src/"} if no tsconfig found or no paths configured.
+    """
+    key = str(project_root)
+    if key in _tsconfig_cache:
+        return _tsconfig_cache[key]
+
+    result = _parse_tsconfig_paths(project_root)
+    _tsconfig_cache[key] = result
+    return result
+
+
+def _parse_tsconfig_paths(project_root: Path) -> dict[str, str]:
+    """Parse tsconfig paths from disk. Internal — use _load_tsconfig_paths()."""
+    fallback = {"@/": "src/"}
+
+    # Try config files in priority order
+    for name in ("tsconfig.json", "tsconfig.app.json", "jsconfig.json"):
+        config_path = project_root / name
+        if config_path.is_file():
+            try:
+                data = json.loads(config_path.read_text(errors="replace"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            result = _extract_paths(data, project_root)
+            if result is not None:
+                return result
+            # Config exists but no paths — check if it extends another
+            extends = data.get("extends")
+            if isinstance(extends, str) and not extends.startswith("@"):
+                parent_path = (config_path.parent / extends).resolve()
+                if parent_path.is_file():
+                    try:
+                        parent_data = json.loads(parent_path.read_text(errors="replace"))
+                    except (json.JSONDecodeError, OSError):
+                        return fallback
+                    parent_result = _extract_paths(parent_data, parent_path.parent)
+                    if parent_result is not None:
+                        # Child overrides parent — merge (child wins, but here child has none)
+                        return parent_result
+            return fallback
+
+    return fallback
+
+
+def _extract_paths(data: dict, base_dir: Path) -> dict[str, str] | None:
+    """Extract paths mapping from a parsed tsconfig. Returns None if no paths field."""
+    compiler_options = data.get("compilerOptions")
+    if not isinstance(compiler_options, dict):
+        return None
+    paths = compiler_options.get("paths")
+    if not isinstance(paths, dict):
+        return None
+
+    base_url = compiler_options.get("baseUrl", ".")
+    if not isinstance(base_url, str):
+        base_url = "."
+
+    result: dict[str, str] = {}
+    for alias, targets in paths.items():
+        if not isinstance(targets, list) or not targets:
+            continue
+        # Use first target (matches TS resolution behavior)
+        target = targets[0]
+        if not isinstance(target, str):
+            continue
+        # Strip wildcard: "@/*" → "@/", "./src/*" → "./src/"
+        alias_prefix = alias.removesuffix("*")
+        target_prefix = target.removesuffix("*")
+        # Compose with baseUrl: resolve target relative to baseUrl
+        target_dir = target_prefix.removeprefix("./")
+        if base_url != ".":
+            base = base_url.rstrip("/")
+            if target_dir:
+                target_dir = base + "/" + target_dir
+            else:
+                target_dir = base + "/"
+        result[alias_prefix] = target_dir
+
+    return result if result else None
+
+
+# ── Import resolution helpers ──────────────────────────────
+
+
+def _resolve_alias(module_path: str, tsconfig_paths: dict[str, str],
+                   project_root: Path) -> Path | None:
+    """Resolve a tsconfig path alias to absolute path, or None if not an alias."""
+    for prefix, target_dir in tsconfig_paths.items():
+        if module_path.startswith(prefix):
+            relative = module_path[len(prefix):]
+            return (project_root / target_dir / relative).resolve()
+    return None
+
+
+def _resolve_module(module_path: str, filepath: str,
+                    tsconfig_paths: dict[str, str],
+                    project_root: Path,
+                    graph: dict[str, dict],
+                    source_resolved: str) -> None:
+    """Resolve an import specifier and add edges to the graph.
+
+    Handles relative imports and tsconfig alias imports. External packages
+    (bare specifiers like 'react') are silently ignored.
+    """
+    target: Path | None = None
+
+    if module_path.startswith("."):
+        source_dir = (Path(filepath).parent if Path(filepath).is_absolute()
+                      else (project_root / filepath).parent)
+        target = (source_dir / module_path).resolve()
+    else:
+        target = _resolve_alias(module_path, tsconfig_paths, project_root)
+
+    if target is None:
+        return  # External package — not in our graph
+
+    for ext in _RESOLVE_EXTENSIONS:
+        candidate = Path(str(target) + ext)
+        if candidate.is_file():
+            target_resolved = str(candidate)
+            graph[source_resolved]["imports"].add(target_resolved)
+            graph[target_resolved]["importers"].add(source_resolved)
+            break
+
 
 def build_dep_graph(path: Path) -> dict[str, dict]:
     """Build a dependency graph: for each file, who it imports and who imports it.
 
     Returns {resolved_path: {"imports": set[str], "importers": set[str], "import_count": int, "importer_count": int}}
     """
-    from ....utils import find_ts_files
-    ts_files = find_ts_files(path)
-    hits = grep_files(r"from\s+['\"]", ts_files)
+    from ....utils import find_ts_files, find_source_files
 
     graph: dict[str, dict] = defaultdict(lambda: {"imports": set(), "importers": set()})
     module_re = re.compile(r"""from\s+['"]([^'"]+)['"]""")
+    tsconfig_paths = _load_tsconfig_paths(PROJECT_ROOT)
+
+    # Scan .ts/.tsx files
+    ts_files = find_ts_files(path)
+    hits = grep_files(r"from\s+['\"]", ts_files)
 
     for filepath, _lineno, content in hits:
         source_resolved = resolve_path(filepath)
         graph[source_resolved]  # ensure entry exists
-
         m = module_re.search(content)
         if not m:
             continue
-        module_path = m.group(1)
-        # Resolve relative imports to absolute paths
-        if module_path.startswith("."):
-            source_dir = Path(filepath).parent if Path(filepath).is_absolute() else (PROJECT_ROOT / filepath).parent
-            target = (source_dir / module_path).resolve()
-            # Try common extensions (is_file() excludes directories)
-            for ext in ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]:
-                candidate = Path(str(target) + ext)
-                if candidate.is_file():
-                    target_resolved = str(candidate)
-                    graph[source_resolved]["imports"].add(target_resolved)
-                    graph[target_resolved]["importers"].add(source_resolved)
-                    break
-        elif module_path.startswith("@/"):
-            # Alias: @/ -> src/
-            relative = module_path[2:]
-            target = SRC_PATH / relative
-            for ext in ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]:
-                candidate = Path(str(target) + ext)
-                if candidate.is_file():
-                    target_resolved = str(candidate)
-                    graph[source_resolved]["imports"].add(target_resolved)
-                    graph[target_resolved]["importers"].add(source_resolved)
-                    break
+        _resolve_module(m.group(1), filepath, tsconfig_paths, PROJECT_ROOT,
+                        graph, source_resolved)
+
+    # Scan framework files (.svelte, .vue, .astro) for imports into .ts/.tsx modules
+    fw_files = find_source_files(path, list(_FRAMEWORK_EXTENSIONS))
+    if fw_files:
+        fw_hits = grep_files(r"from\s+['\"]", fw_files)
+        for filepath, _lineno, content in fw_hits:
+            source_resolved = resolve_path(filepath)
+            graph[source_resolved]  # ensure entry exists
+            m = module_re.search(content)
+            if not m:
+                continue
+            _resolve_module(m.group(1), filepath, tsconfig_paths, PROJECT_ROOT,
+                            graph, source_resolved)
 
     return finalize_graph(dict(graph))
 
@@ -137,7 +270,10 @@ def build_dynamic_import_targets(path: Path, extensions: list[str]) -> set[str]:
     """Find files referenced by dynamic imports (import('...')) and side-effect imports."""
     from ....utils import find_source_files
     targets: set[str] = set()
-    files = find_source_files(path, extensions)
+    # Also scan framework files for dynamic imports
+    all_extensions = extensions + [e for e in _FRAMEWORK_EXTENSIONS
+                                   if e not in extensions]
+    files = find_source_files(path, all_extensions)
 
     hits = grep_files(r"import\s*\(\s*['\"]", files)
     module_re = re.compile(r"""import\s*\(\s*['"]([^'"]+)['"]""")
@@ -157,5 +293,9 @@ def build_dynamic_import_targets(path: Path, extensions: list[str]) -> set[str]:
 
 
 def ts_alias_resolver(target: str) -> str:
-    """Resolve TS/Vite @/ alias to src/."""
-    return target.replace("@/", "src/") if target.startswith("@/") else target
+    """Resolve TS path aliases using tsconfig.json paths."""
+    paths = _load_tsconfig_paths(PROJECT_ROOT)
+    for prefix, target_dir in paths.items():
+        if target.startswith(prefix):
+            return target_dir + target[len(prefix):]
+    return target
